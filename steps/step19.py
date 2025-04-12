@@ -32,7 +32,11 @@ class Variable:
         self.generation = 0
 
     def __repr__(self):
-        return f"Variable({self.data})"
+        p = str(self.data).replace("\n", "\n" + " " * 9)
+        return f"Variable({p})"
+
+    def __len__(self):
+        return len(self.data)
 
     @property
     def shape(self):
@@ -184,5 +188,8 @@ if __name__ == "__main__":
         x = Variable(np.random.randn(10000))
         a = square(x)
         y = add(square(a), square(a))
-        print(y.data)
-        print(x.grad)
+        print(y)
+        print(x)
+
+    x.data = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
+    print(x)
