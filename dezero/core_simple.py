@@ -20,15 +20,14 @@ class Config:
 
 class Variable:
     __array_priority__ = 200
+
     def __init__(self, data, name: str = None):
         if not isinstance(name, str) and name is not None:
             raise TypeError("`name` must be a string or None.")
-        if type(data) == np.float32 or type(data) == np.float64:
+        if type(data) in (int, float, None, np.int32, np.int64, np.float32, np.float64):
             data = np.array(data)
         if not isinstance(data, np.ndarray):
-            raise TypeError(
-                f"`data` must be a numpy array, but got {data.__class__.__name__}."
-            )
+            raise TypeError(f"Invalid type for data: {type(data).__name__}. ")
         self.data = data
         self.name = name
         self.grad = None
@@ -114,14 +113,17 @@ class Variable:
     def cleargrad(self):
         self.grad = None
 
+def as_array(x) -> np.ndarray:
+    if isinstance(x, Variable):
+        return x.data
+    if np.isscalar(x):
+        return np.array(x)
+    return x
 
 def as_variable(x) -> Variable:
     if isinstance(x, Variable):
         return x
-    elif isinstance(x, np.ndarray):
-        return Variable(x)
-    else:
-        raise TypeError(f"Invalid type for input: {type(x).__name__}")
+    return Variable(x)
 
 
 class Function:
@@ -171,6 +173,37 @@ def add(x0: Variable, x1: Variable):
     return Add()(x0, x1)
 
 
+class Neg(Function):
+    def forward(self, x: np.ndarray) -> np.ndarray:
+        return -x
+
+    def backward(self, gy: np.ndarray) -> np.ndarray:
+        return -gy
+
+
+def neg(x: Variable):
+    return Neg()(x)
+
+
+class Sub(Function):
+    def forward(self, x0: np.ndarray, x1: np.ndarray) -> np.ndarray:
+        y = x0 - x1
+        return y
+
+    def backward(self, gy: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        return (gy, -gy)
+
+
+def sub(x0: Variable, x1: Variable):
+    x1 = as_variable(x1)
+    return Sub()(x0, x1)
+
+
+def rsub(x0: Variable, x1: Variable):
+    x1 = as_variable(x1)
+    return Sub()(x1, x0)
+
+
 class Mul(Function):
     def forward(self, x0: np.ndarray, x1: np.ndarray) -> np.ndarray:
         y = x0 * x1
@@ -188,35 +221,59 @@ def mul(x0: Variable, x1: Variable):
     return Mul()(x0, x1)
 
 
-class Square(Function):
-    def forward(self, x: np.ndarray) -> np.ndarray:
-        y = x**2
+class Div(Function):
+    def forward(self, x0: np.ndarray, x1: np.ndarray) -> np.ndarray:
+        y = x0 / x1
         return y
 
-    def backward(self, gy: np.ndarray) -> np.ndarray:
-        x = self.inputs[0].data
-        gx = 2 * x * gy
-        return gx
+    def backward(self, gy: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        x0, x1 = self.inputs
+        gx0 = gy / x1.data
+        gx1 = -gy * x0.data / (x1.data**2)
+        return gx0, gx1
 
 
-def square(x: Variable):
-    return Square()(x)
+def div(x0: Variable, x1: Variable):
+    x1 = as_variable(x1)
+    return Div()(x0, x1)
 
 
-Variable.__add__ = add
-Variable.__radd__ = add
-Variable.__mul__ = mul
-Variable.__rmul__ = mul
+def rdiv(x0: Variable, x1: Variable):
+    x1 = as_variable(x1)
+    return Div()(x1, x0)
 
-if __name__ == "__main__":
-    a = Variable(np.array(2.0))
-    b = Variable(np.array(3.0))
-    c = Variable(np.array(4.0))
-    d = a + b * c
-    y = square(d)
-    y.backward(retain_grad=True)
-    print(y)
-    print(d.grad)
-    print(a.grad)
-    print(b.grad)
-    print(c.grad)
+
+class Pow(Function):
+    def forward(self, x0: np.ndarray, x1: np.ndarray) -> np.ndarray:
+        y = x0**x1
+        return y
+
+    def backward(self, gy: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        x0, x1 = self.inputs
+        gx0 = gy * x1.data * x0.data ** (x1.data - 1)
+        gx1 = np.log(x0.data) * gy * x0.data**x1.data
+        return gx0, gx1
+
+
+def pow(x0: Variable, x1: Variable):
+    x1 = as_variable(x1)
+    return Pow()(x0, x1)
+
+
+def rpow(x0: Variable, x1: Variable):
+    x1 = as_variable(x1)
+    return Pow()(x1, x0)
+
+
+def setup_variable():
+    Variable.__add__ = add
+    Variable.__radd__ = add
+    Variable.__mul__ = mul
+    Variable.__rmul__ = mul
+    Variable.__sub__ = sub
+    Variable.__rsub__ = rsub
+    Variable.__neg__ = neg
+    Variable.__pow__ = pow
+    Variable.__rpow__ = rpow
+    Variable.__truediv__ = div
+    Variable.__rtruediv__ = rdiv

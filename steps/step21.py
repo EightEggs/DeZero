@@ -1,8 +1,6 @@
 # Make Variable easier to use
 from contextlib import contextmanager
 import heapq
-import time
-from tkinter import N
 import weakref
 import numpy as np
 
