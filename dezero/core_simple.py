@@ -113,12 +113,14 @@ class Variable:
     def cleargrad(self):
         self.grad = None
 
+
 def as_array(x) -> np.ndarray:
     if isinstance(x, Variable):
         return x.data
     if np.isscalar(x):
         return np.array(x)
     return x
+
 
 def as_variable(x) -> Variable:
     if isinstance(x, Variable):
@@ -250,8 +252,43 @@ class Pow(Function):
 
     def backward(self, gy: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         x0, x1 = self.inputs
-        gx0 = gy * x1.data * x0.data ** (x1.data - 1)
-        gx1 = np.log(x0.data) * gy * x0.data**x1.data
+        x0_data = x0.data
+        x1_data = x1.data
+
+        # 处理gx0 (关于x0的梯度)
+        gx0 = np.zeros_like(x0_data, dtype=np.float64)
+        mask = x0_data != 0  # 避免除以零
+        gx0[mask] = gy[mask] * x1_data[mask] * x0_data[mask] ** (x1_data[mask] - 1)
+
+        # 处理x0=0且x1>1的情况
+        mask = (x0_data == 0) & (x1_data > 1)
+        gx0[mask] = 0
+
+        # 处理x0=0且x1==1的情况
+        mask = (x0_data == 0) & (x1_data == 1)
+        gx0[mask] = gy[mask]
+
+        # 处理x0=0且0<x1<1的情况 - 梯度无限大
+        mask = (x0_data == 0) & (x1_data > 0) & (x1_data < 1)
+        gx0[mask] = np.inf
+
+        # 处理x0=0且x1<=0的情况 - 未定义
+        mask = (x0_data == 0) & (x1_data <= 0)
+        gx0[mask] = np.nan
+
+        # 处理gx1 (关于x1的梯度)
+        gx1 = np.zeros_like(x1_data, dtype=np.float64)
+        mask = x0_data > 0  # 仅对正x0定义对数
+        gx1[mask] = gy[mask] * np.log(x0_data[mask]) * (x0_data[mask] ** x1_data[mask])
+
+        # 处理x0=0且x1>0的情况
+        mask = (x0_data == 0) & (x1_data > 0)
+        gx1[mask] = 0
+
+        # 处理x0<=0的情况 - 未定义
+        mask = x0_data <= 0
+        gx1[~np.isnan(gx1) & mask] = np.nan
+
         return gx0, gx1
 
 
